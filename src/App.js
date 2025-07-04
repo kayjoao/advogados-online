@@ -36,41 +36,20 @@ import {
     Trash2,
     Edit3,
     UserPlus,
-    MessageSquare // Ícone adicionado
+    MessageSquare,
+    AlertTriangle
 } from 'lucide-react';
 
-// --- IMPORTANTE: REGRAS DE SEGURANÇA ---
-// Certifique-se de que as suas regras no Firebase estão atualizadas para permitir
-// que o formulário de contacto funcione corretamente.
-/*
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /contacts/{docId} {
-      allow create;
-      allow read, update, delete: if request.auth != null;
-    }
-    match /clients/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /users/{userId} {
-      allow create: if request.auth.uid != null;
-      allow read, update, delete: if request.auth.uid == userId;
-      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'main_admin';
-    }
-  }
-}
-*/
-
-// --- INÍCIO: Configuração do Firebase (ATUALIZADA) ---
+// --- INÍCIO: Configuração do Firebase ---
+// IMPORTANTE: Este bloco lê as variáveis de ambiente que configurou na Vercel.
 const firebaseConfig = {
-   apiKey: process.env.REACT_APP_API_KEY,
-   authDomain: process.env.REACT_APP_AUTH_DOMAIN,
-   projectId: process.env.REACT_APP_PROJECT_ID,
-   storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
-   messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
-   appId: process.env.REACT_APP_APP_ID,
-   measurementId: process.env.REACT_APP_MEASUREMENT_ID
+  apiKey: process.env.REACT_APP_API_KEY,
+  authDomain: process.env.REACT_APP_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_APP_ID,
+  measurementId: process.env.REACT_APP_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -108,6 +87,63 @@ const Modal = ({ isOpen, onClose, title, children }) => {
         </div>
     );
 };
+
+const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md">
+                <div className="p-6 text-center">
+                    <div className="flex justify-center mb-4">
+                        <AlertTriangle className="w-12 h-12 text-red-500" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-800 mb-2">{title}</h3>
+                    <p className="text-gray-600 mb-6">{message}</p>
+                    <div className="flex justify-center gap-4">
+                        <button 
+                            onClick={onClose} 
+                            className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                        <button 
+                            onClick={onConfirm}
+                            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        >
+                            Confirmar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const AlertModal = ({ isOpen, onClose, title, message }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md">
+                <div className="p-6 text-center">
+                    <div className="flex justify-center mb-4">
+                        <AlertTriangle className="w-12 h-12 text-yellow-500" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-800 mb-2">{title}</h3>
+                    <p className="text-gray-600 mb-6">{message}</p>
+                    <div className="flex justify-center">
+                        <button 
+                            onClick={onClose} 
+                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            OK
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 const Spinner = () => (
     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -401,10 +437,10 @@ const DashboardView = ({ setActiveView }) => (
     </div>
 );
 
-// NOVO COMPONENTE PARA VER MENSAGENS
 const ContactMessages = () => {
     const [messages, setMessages] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
+    const [confirmState, setConfirmState] = React.useState({ isOpen: false, messageId: null });
 
     React.useEffect(() => {
         const messagesCollectionRef = collection(db, 'contacts');
@@ -417,7 +453,6 @@ const ContactMessages = () => {
                 messagesData.push({ 
                     id: doc.id, 
                     ...data,
-                    // Converte o Timestamp do Firebase para um objeto Date do JS
                     submittedAt: data.submittedAt.toDate() 
                 });
             });
@@ -431,61 +466,75 @@ const ContactMessages = () => {
         return () => unsubscribe();
     }, []);
 
-    const handleDeleteMessage = async (messageId) => {
-        if (confirm("Tem a certeza que deseja apagar esta mensagem?")) {
+    const handleDeleteClick = (messageId) => {
+        setConfirmState({ isOpen: true, messageId: messageId });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (confirmState.messageId) {
             try {
-                await deleteDoc(doc(db, 'contacts', messageId));
+                await deleteDoc(doc(db, 'contacts', confirmState.messageId));
             } catch (error) {
                 console.error("Erro ao apagar mensagem: ", error);
-                alert("Ocorreu um erro ao apagar a mensagem.");
+            } finally {
+                setConfirmState({ isOpen: false, messageId: null });
             }
         }
     };
 
     return (
-        <div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-6">Mensagens Recebidas</h3>
-            {isLoading ? (
-                <div className="flex justify-center mt-10"><Spinner /></div>
-            ) : (
-                <div className="bg-white rounded-lg shadow overflow-x-auto">
-                    <table className="w-full whitespace-nowrap">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr className="text-left text-sm font-semibold text-gray-600">
-                                <th className="p-4">Data</th>
-                                <th className="p-4">Nome</th>
-                                <th className="p-4">Email</th>
-                                <th className="p-4">Telefone</th>
-                                <th className="p-4">Mensagem</th>
-                                <th className="p-4">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {messages.length > 0 ? messages.map(msg => (
-                                <tr key={msg.id} className="hover:bg-gray-50">
-                                    <td className="p-4 text-sm text-gray-600">{msg.submittedAt.toLocaleString('pt-BR')}</td>
-                                    <td className="p-4 font-medium">{msg.name}</td>
-                                    <td className="p-4 text-gray-600">{msg.email}</td>
-                                    <td className="p-4 text-gray-600">{msg.phone}</td>
-                                    <td className="p-4 text-gray-600 text-sm max-w-xs truncate" title={msg.message}>{msg.message}</td>
-                                    <td className="p-4">
-                                        <Tooltip message="Apagar Mensagem">
-                                            <button onClick={() => handleDeleteMessage(msg.id)} className="text-red-600 hover:text-red-800">
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </Tooltip>
-                                    </td>
+        <>
+            <ConfirmationModal
+                isOpen={confirmState.isOpen}
+                onClose={() => setConfirmState({ isOpen: false, messageId: null })}
+                onConfirm={handleConfirmDelete}
+                title="Apagar Mensagem"
+                message="Tem a certeza que deseja apagar esta mensagem? Esta ação não pode ser desfeita."
+            />
+            <div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-6">Mensagens Recebidas</h3>
+                {isLoading ? (
+                    <div className="flex justify-center mt-10"><Spinner /></div>
+                ) : (
+                    <div className="bg-white rounded-lg shadow overflow-x-auto">
+                        <table className="w-full whitespace-nowrap">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                                <tr className="text-left text-sm font-semibold text-gray-600">
+                                    <th className="p-4">Data</th>
+                                    <th className="p-4">Nome</th>
+                                    <th className="p-4">Email</th>
+                                    <th className="p-4">Telefone</th>
+                                    <th className="p-4">Mensagem</th>
+                                    <th className="p-4">Ações</th>
                                 </tr>
-                            )) : (
-                                <tr>
-                                    <td colSpan="6" className="text-center p-6 text-gray-500">Nenhuma mensagem recebida.</td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {messages.length > 0 ? messages.map(msg => (
+                                    <tr key={msg.id} className="hover:bg-gray-50">
+                                        <td className="p-4 text-sm text-gray-600">{msg.submittedAt.toLocaleString('pt-BR')}</td>
+                                        <td className="p-4 font-medium">{msg.name}</td>
+                                        <td className="p-4 text-gray-600">{msg.email}</td>
+                                        <td className="p-4 text-gray-600">{msg.phone}</td>
+                                        <td className="p-4 text-gray-600 text-sm max-w-xs truncate" title={msg.message}>{msg.message}</td>
+                                        <td className="p-4">
+                                            <Tooltip message="Apagar Mensagem">
+                                                <button onClick={() => handleDeleteClick(msg.id)} className="text-red-600 hover:text-red-800">
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </Tooltip>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan="6" className="text-center p-6 text-gray-500">Nenhuma mensagem recebida.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </>
     );
 };
 
@@ -495,6 +544,8 @@ const ClientManagement = ({ userRole }) => {
     const [isLoading, setIsLoading] = React.useState(true);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [editingClient, setEditingClient] = React.useState(null);
+    const [confirmState, setConfirmState] = React.useState({ isOpen: false, clientId: null });
+    const [alertState, setAlertState] = React.useState({ isOpen: false, message: '' });
 
     React.useEffect(() => {
         const clientsCollectionRef = collection(db, 'clients');
@@ -525,16 +576,22 @@ const ClientManagement = ({ userRole }) => {
         setIsModalOpen(true);
     };
 
-    const handleDeleteClient = async (clientId) => {
+    const handleDeleteClick = (clientId) => {
         if (userRole !== 'main_admin') {
-            alert("Não tem permissão para excluir clientes.");
+            setAlertState({ isOpen: true, message: 'Não tem permissão para excluir clientes.' });
             return;
         }
-        if (confirm("Tem a certeza que deseja excluir este cliente? Esta ação não pode ser desfeita.")) {
+        setConfirmState({ isOpen: true, clientId: clientId });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (confirmState.clientId) {
             try {
-                await deleteDoc(doc(db, 'clients', clientId));
+                await deleteDoc(doc(db, 'clients', confirmState.clientId));
             } catch (error) {
                 console.error("Erro ao excluir cliente: ", error);
+            } finally {
+                setConfirmState({ isOpen: false, clientId: null });
             }
         }
     };
@@ -555,68 +612,83 @@ const ClientManagement = ({ userRole }) => {
     };
 
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-semibold text-gray-800">Lista de Clientes</h3>
-                <button onClick={handleAddClient} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center space-x-2">
-                    <Plus size={18} />
-                    <span>Novo Cliente</span>
-                </button>
-            </div>
-
-            {isLoading ? (
-                <div className="flex justify-center mt-10"><Spinner /></div>
-            ) : (
-                <div className="bg-white rounded-lg shadow overflow-x-auto">
-                    <table className="w-full whitespace-nowrap">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr className="text-left text-sm font-semibold text-gray-600">
-                                <th className="p-4">Nome</th>
-                                <th className="p-4">Email</th>
-                                <th className="p-4">Telefone</th>
-                                <th className="p-4">Status</th>
-                                <th className="p-4">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {clients.length > 0 ? clients.map(client => (
-                                <tr key={client.id} className="hover:bg-gray-50">
-                                    <td className="p-4">{client.name}</td>
-                                    <td className="p-4 text-gray-600">{client.email}</td>
-                                    <td className="p-4 text-gray-600">{client.phone}</td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                            client.status === 'Ativo' ? 'bg-green-100 text-green-800' :
-                                            client.status === 'Inativo' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                                        }`}>{client.status}</span>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="flex space-x-2">
-                                            <Tooltip message="Editar">
-                                                <button onClick={() => handleEditClient(client)} className="text-blue-600 hover:text-blue-800"><Edit3 size={18} /></button>
-                                            </Tooltip>
-                                            {userRole === 'main_admin' && (
-                                                <Tooltip message="Excluir">
-                                                    <button onClick={() => handleDeleteClient(client.id)} className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
-                                                </Tooltip>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            )) : (
-                                <tr>
-                                    <td colSpan="5" className="text-center p-6 text-gray-500">Nenhum cliente encontrado.</td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+        <>
+            <AlertModal
+                isOpen={alertState.isOpen}
+                onClose={() => setAlertState({ isOpen: false, message: '' })}
+                title="Acesso Negado"
+                message={alertState.message}
+            />
+            <ConfirmationModal
+                isOpen={confirmState.isOpen}
+                onClose={() => setConfirmState({ isOpen: false, clientId: null })}
+                onConfirm={handleConfirmDelete}
+                title="Apagar Cliente"
+                message="Tem a certeza que deseja apagar este cliente? Esta ação não pode ser desfeita."
+            />
+            <div>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-semibold text-gray-800">Lista de Clientes</h3>
+                    <button onClick={handleAddClient} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center space-x-2">
+                        <Plus size={18} />
+                        <span>Novo Cliente</span>
+                    </button>
                 </div>
-            )}
-            
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingClient ? "Editar Cliente" : "Adicionar Novo Cliente"}>
-                <ClientForm client={editingClient} onSave={handleSaveClient} onCancel={() => setIsModalOpen(false)} />
-            </Modal>
-        </div>
+
+                {isLoading ? (
+                    <div className="flex justify-center mt-10"><Spinner /></div>
+                ) : (
+                    <div className="bg-white rounded-lg shadow overflow-x-auto">
+                        <table className="w-full whitespace-nowrap">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                                <tr className="text-left text-sm font-semibold text-gray-600">
+                                    <th className="p-4">Nome</th>
+                                    <th className="p-4">Email</th>
+                                    <th className="p-4">Telefone</th>
+                                    <th className="p-4">Status</th>
+                                    <th className="p-4">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {clients.length > 0 ? clients.map(client => (
+                                    <tr key={client.id} className="hover:bg-gray-50">
+                                        <td className="p-4">{client.name}</td>
+                                        <td className="p-4 text-gray-600">{client.email}</td>
+                                        <td className="p-4 text-gray-600">{client.phone}</td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                                client.status === 'Ativo' ? 'bg-green-100 text-green-800' :
+                                                client.status === 'Inativo' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                                            }`}>{client.status}</span>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex space-x-2">
+                                                <Tooltip message="Editar">
+                                                    <button onClick={() => handleEditClient(client)} className="text-blue-600 hover:text-blue-800"><Edit3 size={18} /></button>
+                                                </Tooltip>
+                                                {userRole === 'main_admin' && (
+                                                    <Tooltip message="Excluir">
+                                                        <button onClick={() => handleDeleteClick(client.id)} className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
+                                                    </Tooltip>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan="5" className="text-center p-6 text-gray-500">Nenhum cliente encontrado.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                
+                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingClient ? "Editar Cliente" : "Adicionar Novo Cliente"}>
+                    <ClientForm client={editingClient} onSave={handleSaveClient} onCancel={() => setIsModalOpen(false)} />
+                </Modal>
+            </div>
+        </>
     );
 };
 
@@ -679,7 +751,7 @@ const ClientForm = ({ client, onSave, onCancel }) => {
     );
 };
 
-const AITool = () => {
+const AITool = ({ apiKey }) => {
     const [inputText, setInputText] = React.useState('');
     const [result, setResult] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
@@ -694,12 +766,12 @@ const AITool = () => {
         setError('');
         setResult('');
 
-        const prompt = `Como um assistente jurídico especialista, analise o seguinte texto e forneça um resumo conciso dos pontos chave, identifique possíveis riscos ou oportunidades e sugira os próximos passos recomendados. Formate a resposta em Markdown. Texto: "${inputText}"`;
+        const prompt = `Como um assistente jurídico especialista, analise o seguinte texto e forneça um resumo conciso dos pontos chave, identifique possíveis riscos ou oportunidades e sugira os próximos passos recomendados. Formate a resposta em HTML simples, usando tags como <h3> para títulos, <strong> para negrito, e <ul> com <li> para listas. Não inclua a tag <html> ou <body>, apenas o conteúdo HTML interno. Texto: "${inputText}"`;
 
         try {
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
-            const apiKey = ""; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const effectiveApiKey = apiKey || ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${effectiveApiKey}`;
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -708,7 +780,8 @@ const AITool = () => {
             });
 
             if (!response.ok) {
-                throw new Error(`API Error: ${response.statusText}`);
+                const errorData = await response.json();
+                throw new Error(`API Error: ${response.statusText} - ${errorData.error?.message}`);
             }
 
             const data = await response.json();
@@ -721,7 +794,7 @@ const AITool = () => {
 
         } catch (err) {
             console.error("Erro na chamada da API Gemini:", err);
-            setError("Não foi possível realizar a análise. Verifique a sua conexão ou tente novamente mais tarde.");
+            setError(`Não foi possível realizar a análise. Verifique a sua conexão ou tente novamente mais tarde. Detalhes: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -753,7 +826,7 @@ const AITool = () => {
             {result && (
                 <div className="mt-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
                     <h4 className="font-semibold text-lg mb-2">Resultado da Análise:</h4>
-                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: result.replace(/\n/g, '<br />') }}></div>
+                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: result }}></div>
                 </div>
             )}
         </div>
@@ -922,14 +995,12 @@ export default function App() {
                 const usersCollectionRef = collection(db, "users");
                 const allUsersSnap = await getDocs(usersCollectionRef);
                 
-                // A verificação é feita antes de adicionar o novo utilizador, por isso `empty` ou `size === 0` funciona
                 const isFirstUser = allUsersSnap.empty;
                 const role = isFirstUser ? 'main_admin' : 'secondary_admin';
                 
                 const userDocRef = doc(db, "users", newUser.uid);
                 await setDoc(userDocRef, { email: newUser.email, role: role });
                 
-                // O onAuthStateChanged tratará do resto.
                 setAuthMessage('Conta criada com sucesso! A entrar...');
 
             } else { // login
