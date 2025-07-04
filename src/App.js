@@ -44,13 +44,13 @@ import {
 // Lembre-se de que este bloco deve ser substituído pela versão que lê as variáveis de ambiente
 // quando estiver a publicar na Vercel, como explicado no guia.
 const firebaseConfig = {
-  apiKey: "AIzaSyBrnSf6XtZEPQNY8YE-1OSQx2stjh1TB1M",
-  authDomain: "advogado2.firebaseapp.com",
-  projectId: "advogado2",
-  storageBucket: "advogado2.appspot.com",
-  messagingSenderId: "825760904225",
-  appId: "1:825760904225:web:296fa397630ece83421f60",
-  measurementId: "G-HG74J0RB9C"
+  apiKey: process.env.REACT_APP_API_KEY,
+  authDomain: process.env.REACT_APP_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_APP_ID,
+  measurementId: process.env.REACT_APP_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
