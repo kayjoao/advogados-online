@@ -1093,23 +1093,30 @@ const SettingsPanel = () => {
         return () => unsubscribe();
     }, []);
 
-    const handleAddUser = async (email, role) => {
+    const handleInviteUser = async (email, role) => {
         setError('');
         setSuccess('');
         try {
             const userQuery = query(collection(db, 'users'), where("email", "==", email));
             const existingUser = await getDocs(userQuery);
             if (!existingUser.empty) {
-                throw new Error("Já existe um utilizador com este email e função definida.");
+                throw new Error("Já existe um utilizador registado com este email.");
             }
-            
-            await addDoc(collection(db, 'users'), { email, role, preApproved: true });
 
-            setSuccess(`Utilizador ${email} pré-aprovado com a função de ${role}. Ele precisa de se registar com este email para obter acesso.`);
+            const invitationsRef = collection(db, 'invitations');
+            const invitationDoc = doc(invitationsRef, email);
+            const invitationSnap = await getDoc(invitationDoc);
+            if(invitationSnap.exists()) {
+                throw new Error("Já existe um convite pendente para este email.");
+            }
+
+            await setDoc(invitationDoc, { role: role });
+
+            setSuccess(`Convite enviado para ${email} com a função de ${role}. O utilizador precisa de se registar com este email para obter acesso.`);
             setIsModalOpen(false);
         } catch (err) {
-            console.error("Erro ao adicionar utilizador: ", err);
-            setError(err.message || "Não foi possível adicionar o utilizador.");
+            console.error("Erro ao convidar utilizador: ", err);
+            setError(err.message || "Não foi possível enviar o convite.");
         }
     };
 
@@ -1145,13 +1152,13 @@ const SettingsPanel = () => {
                 </div>
             )}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Convidar Novo Utilizador">
-                <AddUserForm onAdd={handleAddUser} onCancel={() => setIsModalOpen(false)} />
+                <InviteUserForm onInvite={handleInviteUser} onCancel={() => setIsModalOpen(false)} />
             </Modal>
         </div>
     );
 };
 
-const AddUserForm = ({ onAdd, onCancel }) => {
+const InviteUserForm = ({ onInvite, onCancel }) => {
     const [email, setEmail] = React.useState('');
     const [role, setRole] = React.useState('secondary_admin');
     const [isSaving, setIsSaving] = React.useState(false);
@@ -1159,7 +1166,7 @@ const AddUserForm = ({ onAdd, onCancel }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsSaving(true);
-        await onAdd(email, role);
+        await onInvite(email, role);
         setIsSaving(false);
     };
 
@@ -1226,18 +1233,36 @@ export default function App() {
         setAuthMessage('');
         try {
             if (action === 'register') {
-                setAuthMessage('A registar e a configurar a conta...');
+                setAuthMessage('A verificar convite e a registar...');
+                
+                const invitationDocRef = doc(db, "invitations", email);
+                const invitationSnap = await getDoc(invitationDocRef);
+
+                let role = null;
+
+                if (invitationSnap.exists()) {
+                    role = invitationSnap.data().role;
+                } else {
+                    const usersCollectionRef = collection(db, "users");
+                    const allUsersSnap = await getDocs(usersCollectionRef);
+                    if (allUsersSnap.empty) {
+                        role = 'main_admin';
+                    }
+                }
+
+                if (!role) {
+                    throw new Error("Registo não autorizado. Peça a um administrador para o convidar.");
+                }
+
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const newUser = userCredential.user;
-
-                const usersCollectionRef = collection(db, "users");
-                const allUsersSnap = await getDocs(usersCollectionRef);
-                
-                const isFirstUser = allUsersSnap.empty;
-                const role = isFirstUser ? 'main_admin' : 'secondary_admin';
                 
                 const userDocRef = doc(db, "users", newUser.uid);
                 await setDoc(userDocRef, { email: newUser.email, role: role });
+
+                if (invitationSnap.exists()) {
+                    await deleteDoc(invitationDocRef);
+                }
                 
                 setAuthMessage('Conta criada com sucesso! A entrar...');
 
@@ -1246,7 +1271,7 @@ export default function App() {
             }
         } catch (error) {
             console.error(`Erro de ${action}: `, error);
-            let message = `Ocorreu um erro. Tente novamente. (${error.code})`;
+            let message = error.message; // Usar a mensagem de erro original
             if (error.code === 'auth/email-already-in-use') {
                 message = 'Este email já está a ser utilizado.';
             } else if (error.code === 'auth/invalid-credential') {
@@ -1284,6 +1309,9 @@ export default function App() {
                 return <HomePage onLoginClick={() => setView('auth')} onContactSubmit={handleContactSubmit} />;
         }
     }
+
+    return renderContent();
+}
 
     return renderContent();
 }
