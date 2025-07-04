@@ -41,15 +41,16 @@ import {
 } from 'lucide-react';
 
 // --- INÍCIO: Configuração do Firebase ---
-// IMPORTANTE: Este bloco lê as variáveis de ambiente que configurou na Vercel.
+// Lembre-se de que este bloco deve ser substituído pela versão que lê as variáveis de ambiente
+// quando estiver a publicar na Vercel, como explicado no guia.
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_API_KEY,
-  authDomain: process.env.REACT_APP_AUTH_DOMAIN,
-  projectId: process.env.REACT_APP_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_APP_ID,
-  measurementId: process.env.REACT_APP_MEASUREMENT_ID
+  apiKey: "AIzaSyBrnSf6XtZEPQNY8YE-1OSQx2stjh1TB1M",
+  authDomain: "advogado2.firebaseapp.com",
+  projectId: "advogado2",
+  storageBucket: "advogado2.appspot.com",
+  messagingSenderId: "825760904225",
+  appId: "1:825760904225:web:296fa397630ece83421f60",
+  measurementId: "G-HG74J0RB9C"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -345,7 +346,7 @@ const AdminDashboard = ({ user, userRole, onLogout }) => {
     
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'messages', label: 'Mensagens', icon: MessageSquare }, // Adicionado
+        { id: 'messages', label: 'Mensagens', icon: MessageSquare }, 
         { id: 'clients', label: 'Clientes', icon: Users },
         { id: 'cases', label: 'Processos', icon: Briefcase },
         { id: 'ai_tool', label: 'Ferramenta IA', icon: BrainCircuit },
@@ -354,11 +355,11 @@ const AdminDashboard = ({ user, userRole, onLogout }) => {
 
     const renderView = () => {
         switch (activeView) {
-            case 'messages': return <ContactMessages />; // Adicionado
+            case 'messages': return <ContactMessages />; 
             case 'clients': return <ClientManagement userRole={userRole} />;
+            case 'cases': return <CaseManagement userRole={userRole} />;
             case 'ai_tool': return <AITool />;
             case 'settings': return userRole === 'main_admin' ? <SettingsPanel /> : <p>Acesso negado.</p>;
-            case 'cases':
             case 'dashboard':
             default:
                 return <DashboardView setActiveView={setActiveView} />;
@@ -428,10 +429,10 @@ const DashboardView = ({ setActiveView }) => (
                 <h4 className="text-xl font-semibold text-gray-700">Gerir Clientes</h4>
                 <p className="text-gray-500 mt-2">Aceda, adicione e atualize informações dos seus clientes.</p>
             </div>
-            <div onClick={() => setActiveView('ai_tool')} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
-                <BrainCircuit className="w-10 h-10 text-purple-500 mb-4" />
-                <h4 className="text-xl font-semibold text-gray-700">Análise com IA</h4>
-                <p className="text-gray-500 mt-2">Utilize inteligência artificial para otimizar as suas petições e análises.</p>
+            <div onClick={() => setActiveView('cases')} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
+                <Briefcase className="w-10 h-10 text-green-500 mb-4" />
+                <h4 className="text-xl font-semibold text-gray-700">Gerir Processos</h4>
+                <p className="text-gray-500 mt-2">Acompanhe o andamento de todos os seus casos.</p>
             </div>
         </div>
     </div>
@@ -692,6 +693,244 @@ const ClientManagement = ({ userRole }) => {
     );
 };
 
+const CaseManagement = ({ userRole }) => {
+    const [cases, setCases] = React.useState([]);
+    const [clients, setClients] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [isModalOpen, setIsModalOpen] = React.useState(false);
+    const [editingCase, setEditingCase] = React.useState(null);
+    const [confirmState, setConfirmState] = React.useState({ isOpen: false, caseId: null });
+    const [alertState, setAlertState] = React.useState({ isOpen: false, message: '' });
+
+    React.useEffect(() => {
+        const clientsUnsubscribe = onSnapshot(collection(db, 'clients'), (snapshot) => {
+            const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setClients(clientsData);
+        });
+
+        const casesUnsubscribe = onSnapshot(query(collection(db, 'cases'), orderBy('createdAt', 'desc')), (snapshot) => {
+            const casesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setCases(casesData);
+            setIsLoading(false);
+        });
+
+        return () => {
+            clientsUnsubscribe();
+            casesUnsubscribe();
+        };
+    }, []);
+
+    const handleAddCase = () => {
+        setEditingCase(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEditCase = (caseItem) => {
+        setEditingCase(caseItem);
+        setIsModalOpen(true);
+    };
+
+    const handleDeleteClick = (caseId) => {
+        if (userRole !== 'main_admin') {
+            setAlertState({ isOpen: true, message: 'Não tem permissão para excluir processos.' });
+            return;
+        }
+        setConfirmState({ isOpen: true, caseId: caseId });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (confirmState.caseId) {
+            try {
+                await deleteDoc(doc(db, 'cases', confirmState.caseId));
+            } catch (error) {
+                console.error("Erro ao excluir processo: ", error);
+            } finally {
+                setConfirmState({ isOpen: false, caseId: null });
+            }
+        }
+    };
+
+    const handleSaveCase = async (caseData) => {
+        try {
+            const client = clients.find(c => c.id === caseData.clientId);
+            const dataToSave = {
+                ...caseData,
+                clientName: client ? client.name : 'Não especificado'
+            };
+
+            if (editingCase) {
+                const caseRef = doc(db, 'cases', editingCase.id);
+                await updateDoc(caseRef, dataToSave);
+            } else {
+                await addDoc(collection(db, 'cases'), { ...dataToSave, createdAt: new Date() });
+            }
+            setIsModalOpen(false);
+            setEditingCase(null);
+        } catch (error) {
+            console.error("Erro ao salvar processo: ", error);
+        }
+    };
+
+    const getStatusClass = (status) => {
+        switch (status) {
+            case 'Ativo': return 'bg-green-100 text-green-800';
+            case 'Pendente': return 'bg-yellow-100 text-yellow-800';
+            case 'Arquivado': return 'bg-gray-100 text-gray-800';
+            default: return 'bg-blue-100 text-blue-800';
+        }
+    };
+
+    return (
+        <>
+            <AlertModal
+                isOpen={alertState.isOpen}
+                onClose={() => setAlertState({ isOpen: false, message: '' })}
+                title="Acesso Negado"
+                message={alertState.message}
+            />
+            <ConfirmationModal
+                isOpen={confirmState.isOpen}
+                onClose={() => setConfirmState({ isOpen: false, caseId: null })}
+                onConfirm={handleConfirmDelete}
+                title="Apagar Processo"
+                message="Tem a certeza que deseja apagar este processo? Esta ação não pode ser desfeita."
+            />
+            <div>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-semibold text-gray-800">Lista de Processos</h3>
+                    <button onClick={handleAddCase} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all shadow-sm flex items-center space-x-2">
+                        <Plus size={18} />
+                        <span>Novo Processo</span>
+                    </button>
+                </div>
+
+                {isLoading ? (
+                    <div className="flex justify-center mt-10"><Spinner /></div>
+                ) : (
+                    <div className="bg-white rounded-lg shadow overflow-x-auto">
+                        <table className="w-full whitespace-nowrap">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                                <tr className="text-left text-sm font-semibold text-gray-600">
+                                    <th className="p-4">Título / Nº Processo</th>
+                                    <th className="p-4">Cliente</th>
+                                    <th className="p-4">Status</th>
+                                    <th className="p-4">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {cases.length > 0 ? cases.map(caseItem => (
+                                    <tr key={caseItem.id} className="hover:bg-gray-50">
+                                        <td className="p-4 font-medium">{caseItem.title}</td>
+                                        <td className="p-4 text-gray-600">{caseItem.clientName}</td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusClass(caseItem.status)}`}>
+                                                {caseItem.status}
+                                            </span>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex space-x-2">
+                                                <Tooltip message="Editar">
+                                                    <button onClick={() => handleEditCase(caseItem)} className="text-blue-600 hover:text-blue-800"><Edit3 size={18} /></button>
+                                                </Tooltip>
+                                                {userRole === 'main_admin' && (
+                                                    <Tooltip message="Excluir">
+                                                        <button onClick={() => handleDeleteClick(caseItem.id)} className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
+                                                    </Tooltip>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan="4" className="text-center p-6 text-gray-500">Nenhum processo encontrado.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                
+                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingCase ? "Editar Processo" : "Adicionar Novo Processo"}>
+                    <CaseForm caseItem={editingCase} clients={clients} onSave={handleSaveCase} onCancel={() => setIsModalOpen(false)} />
+                </Modal>
+            </div>
+        </>
+    );
+};
+
+const CaseForm = ({ caseItem, clients, onSave, onCancel }) => {
+    const [formData, setFormData] = React.useState({
+        title: caseItem?.title || '',
+        description: caseItem?.description || '',
+        clientId: caseItem?.clientId || '',
+        status: caseItem?.status || 'Ativo',
+    });
+    const [isSaving, setIsSaving] = React.useState(false);
+    const [alertState, setAlertState] = React.useState({ isOpen: false, message: '' });
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!formData.clientId) {
+            setAlertState({ isOpen: true, message: "Por favor, selecione um cliente." });
+            return;
+        }
+        setIsSaving(true);
+        await onSave(formData);
+        setIsSaving(false);
+    };
+
+    return (
+        <>
+            <AlertModal
+                isOpen={alertState.isOpen}
+                onClose={() => setAlertState({ isOpen: false, message: '' })}
+                title="Campo Obrigatório"
+                message={alertState.message}
+            />
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Título / Nº do Processo</label>
+                    <input type="text" name="title" value={formData.title} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Cliente Associado</label>
+                    <select name="clientId" value={formData.clientId} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="" disabled>Selecione um cliente</option>
+                        {clients.map(client => (
+                            <option key={client.id} value={client.id}>{client.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Descrição</label>
+                    <textarea name="description" value={formData.description} onChange={handleChange} rows="4" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Status</label>
+                    <select name="status" value={formData.status} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option>Ativo</option>
+                        <option>Pendente</option>
+                        <option>Arquivado</option>
+                    </select>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4">
+                    <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">Cancelar</button>
+                    <button type="submit" disabled={isSaving} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 flex items-center">
+                        {isSaving && <Spinner />}
+                        <span className="ml-2">Salvar Processo</span>
+                    </button>
+                </div>
+            </form>
+        </>
+    );
+};
+
+
 const ClientForm = ({ client, onSave, onCancel }) => {
     const [formData, setFormData] = React.useState({
         name: client?.name || '',
@@ -751,7 +990,7 @@ const ClientForm = ({ client, onSave, onCancel }) => {
     );
 };
 
-const AITool = ({ apiKey }) => {
+const AITool = () => {
     const [inputText, setInputText] = React.useState('');
     const [result, setResult] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
@@ -770,8 +1009,8 @@ const AITool = ({ apiKey }) => {
 
         try {
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
-            const effectiveApiKey = apiKey || ""; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${effectiveApiKey}`;
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -780,8 +1019,7 @@ const AITool = ({ apiKey }) => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`API Error: ${response.statusText} - ${errorData.error?.message}`);
+                throw new Error(`API Error: ${response.statusText}`);
             }
 
             const data = await response.json();
@@ -794,7 +1032,7 @@ const AITool = ({ apiKey }) => {
 
         } catch (err) {
             console.error("Erro na chamada da API Gemini:", err);
-            setError(`Não foi possível realizar a análise. Verifique a sua conexão ou tente novamente mais tarde. Detalhes: ${err.message}`);
+            setError("Não foi possível realizar a análise. Verifique a sua conexão ou tente novamente mais tarde.");
         } finally {
             setIsLoading(false);
         }
