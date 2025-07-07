@@ -750,7 +750,7 @@ const CaseManagement = ({ userRole }) => {
     );
 };
 
-const AITool = () => {
+const AITool = ({ apiKey }) => {
     const [inputText, setInputText] = React.useState('');
     const [result, setResult] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
@@ -768,18 +768,21 @@ const AITool = () => {
         const prompt = `Como um assistente jurídico especialista, analise o seguinte texto e forneça um resumo conciso dos pontos chave, identifique possíveis riscos ou oportunidades e sugira os próximos passos recomendados. Formate a resposta em HTML simples, usando tags como <h3> para títulos, <strong> para negrito, e <ul> com <li> para listas. Não inclua a tag <html> ou <body>, apenas o conteúdo HTML interno. Texto: "${inputText}"`;
 
         try {
-            const payload = { contents: [{ parts: [{ text: prompt }] }] };
-            const apiKey = ""; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const effectiveApiKey = apiKey || ""; 
+            if (!effectiveApiKey) {
+                throw new Error("A chave de API da IA não está configurada. Por favor, adicione a variável de ambiente REACT_APP_GEMINI_API_KEY nas configurações da Vercel.");
+            }
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${effectiveApiKey}`;
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
 
             if (!response.ok) {
-                throw new Error(`API Error: ${response.statusText}`);
+                const errorData = await response.json();
+                throw new Error(`API Error: ${response.statusText} - ${errorData.error?.message}`);
             }
 
             const data = await response.json();
@@ -792,7 +795,7 @@ const AITool = () => {
 
         } catch (err) {
             console.error("Erro na chamada da API Gemini:", err);
-            setError("Não foi possível realizar a análise. Verifique a sua conexão ou tente novamente mais tarde.");
+            setError(`Não foi possível realizar a análise. Detalhes: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -1201,8 +1204,13 @@ const AdminDashboard = ({ user, userRole, onLogout }) => {
             case 'messages': return <ContactMessages />; 
             case 'clients': return <ClientManagement userRole={userRole} />;
             case 'cases': return <CaseManagement userRole={userRole} />;
-            case 'ai_tool': return <AITool />;
-            case 'settings': return <SettingsPanel />;
+            case 'ai_tool': return <AITool apiKey={process.env.REACT_APP_GEMINI_API_KEY} />;
+            case 'settings': {
+                if (userRole === 'main_admin') {
+                    return <SettingsPanel />;
+                }
+                return <p>Acesso negado.</p>;
+            }
             case 'dashboard':
             default:
                 return <DashboardView setActiveView={setActiveView} />;
@@ -1304,7 +1312,9 @@ export default function App() {
                 let role = null;
                 
                 const usersCollectionRef = collection(db, "users");
-                const allUsersSnap = await getDocs(usersCollectionRef);
+                const q = query(usersCollectionRef);
+                const allUsersSnap = await getDocs(q);
+                
                 if (allUsersSnap.empty) {
                     role = 'main_admin';
                 } else {
